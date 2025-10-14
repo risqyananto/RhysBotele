@@ -1,0 +1,19 @@
+{
+  "name": "tele",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [],
+  "author": "japet",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "fs": "^0.0.1-security",
+    "os": "^0.1.2",
+    "ping": "^1.0.0",
+    "systeminformation": "^5.27.11",
+    "telegraf": "^4.16.3"
+  }
+}

@@ -10,8 +10,10 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "axios": "^1.12.2",
     "fs": "^0.0.1-security",
     "os": "^0.1.2",
+    "path": "^0.12.7",
     "ping": "^1.0.0",
     "systeminformation": "^5.27.11",
     "telegraf": "^4.16.3"

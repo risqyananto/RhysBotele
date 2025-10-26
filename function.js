@@ -196,6 +196,17 @@ function hasBalance(userId, amount = 0) {
 }
 
 // === Member System (Dengan Level & Rhystal) ===
+/*
+async function isAdmin(userId) {
+  try {
+    const admins = loadData('members.json');
+    return admins.some(m => m.id.toString() === userId.toString());
+  } catch (error) {
+    console.log('Gagal memeriksa admin:', error)
+    return false
+  }
+}
+  */
 async function isMember(userId) {
   try {
     const members = loadData("members.json");
@@ -359,5 +370,7 @@ module.exports = {
   completeDailyQuest,
   getDailyQuestStatus,
   addReferral,
-  getReferralStats
+  getReferralStats,
+  loadData,
+  saveData
 };

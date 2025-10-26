@@ -1,6 +1,8 @@
 const { Telegraf } = require("telegraf");
 const fs = require("fs");
 const os = require("os");
+const path = require('path');
+const axios = require('axios');
 const si = require("systeminformation");
 const ping = require("ping");
 const func = require('./function')
@@ -12,8 +14,9 @@ const admins = JSON.parse(fs.readFileSync('./admins.json', 'utf-8'));
 const cooldownTop = new Map();
 const cooldownMy = new Map();
 const coolDownDaily = new Map();
-const { generateLeaderboard, isAdmin, getTodayDate, loadQuests, saveQuests, getUserQuest, resetDailyIfNeeded, completeDailyQuest, getDailyQuestStatus, addReferral, getReferralStats, getServerStatus, isMember,getLeader,  addRhystal, useRhystal, cekMember, addAdmin, addMember, hasBalance, getAdminList, getMember, updateRhystal } = require('./function')
+const { loadData, saveData, generateLeaderboard, isAdmin, getTodayDate, loadQuests, saveQuests, getUserQuest, resetDailyIfNeeded, completeDailyQuest, getDailyQuestStatus, addReferral, getReferralStats, getServerStatus, isMember,getLeader,  addRhystal, useRhystal, cekMember, addAdmin, addMember, hasBalance, getAdminList, getMember, updateRhystal } = require('./function')
 // Fungsi ambil data member
+
 function loadMembers() {
   if (!fs.existsSync("members.json")) {
     fs.writeFileSync("members.json", JSON.stringify([]));
@@ -84,6 +87,11 @@ bot.command('help', async (ctx) => {
   const userId = ctx.from.id;
   const isAdmin = await func.isAdmin(userId);
   const isMember = await func.isMember(userId);
+   // === Cek registrasi ===
+  if (!isMember && !isAdmin) {
+    return ctx.reply('⚠️ Anda belum terdaftar. Silakan daftar dengan mengetik perintah /register');
+  }
+
   if (isAdmin) {
         await msgHandler.menuAdmin(ctx);
     } else {
@@ -124,6 +132,307 @@ bot.on('text', async (ctx) => {
     const command = msg.split(' ')[0].toLowerCase(); // ambil command aja
 
     switch (command) {
+      case '/inventory': {
+  try {
+    const userId = ctx.from.id;
+    const inventory = loadData('inventory.json');
+    const userInv = inventory.find(u => u.userId === userId);
+
+    // kalau belum pernah gacha
+    if (!userInv || userInv.items.length === 0) {
+      ctx.reply('📦 Kamu belum punya senjata apapun di inventory.\nCoba gacha dulu pakai /gacha 💎', { parse_mode: 'HTML' });
+      break;
+    }
+
+    // urutkan item berdasarkan rarity
+    const order = ['Mythic', 'Legendary', 'Epic', 'Rare', 'Uncommon'];
+    const sorted = [...userInv.items].sort((a, b) => order.indexOf(a.rarity) - order.indexOf(b.rarity));
+
+    // format list item
+    const listText = sorted
+      .map((item, i) => {
+        const rarityIcon = {
+          Uncommon: '⚪',
+          Rare: '🟦',
+          Epic: '🟪',
+          Legendary: '🟨',
+          Mythic: '🔴'
+        }[item.rarity] || '⚔️';
+        return `${i + 1}. ${rarityIcon} <b>${item.name}</b> <i>(${item.rarity})</i>`;
+      })
+      .join('\n');
+
+    // tampilkan ke user
+    ctx.reply(
+      `
+<b>🎒 INVENTORY</b>
+──────────────────
+👤 <b>${ctx.from.first_name}</b>
+📦 Total Item: <b>${userInv.items.length}</b>
+
+${listText}
+──────────────────
+Gunakan /gacha untuk mendapatkan lebih banyak senjata!
+`,
+      { parse_mode: 'HTML' }
+    );
+
+  } catch (err) {
+    console.error('❌ Gagal menampilkan inventory:', err);
+    ctx.reply('❌ Terjadi kesalahan saat mengambil data inventory.');
+  }
+  break;
+}
+/*
+      case '/gacha': {
+  try {
+    const userId = ctx.from.id;
+    const userName = ctx.from.first_name;
+    const gachaCost = 200;
+
+    // Cek apakah user punya cukup Rhystal
+    if (!hasBalance(userId, gachaCost)) {
+      ctx.reply('💎 Rhystal kamu tidak cukup untuk melakukan gacha!');
+      break;
+    }
+
+    // Load data
+    const weapons = loadData('weapon.json');
+    const members = loadData('members.json');
+    const inventory = loadData('inventory.json');
+
+    // Ambil data member
+    const member = members.find(m => m.id.toString() === userId.toString());
+
+    // Kurangi Rhystal
+    member.rhystal -= gachaCost;
+    saveData('members.json', members);
+
+    // Fungsi ambil rarity (probabilitas)
+    function getRarity() {
+      const rand = Math.random() * 100;
+      if (rand < 50) return 'Uncommon';
+      if (rand < 90) return 'Rare';
+      if (rand < 98) return 'Epic';
+      if (rand < 99) return 'Legendary';
+      return 'Mythic';
+    }
+
+    // Tentukan hasil gacha
+    const rarity = getRarity();
+    const pool = weapons[rarity];
+    const weapon = pool[Math.floor(Math.random() * pool.length)];
+
+    // Simpan ke inventory
+    let userInv = inventory.find(u => u.userId === userId);
+    if (!userInv) {
+      userInv = { userId, items: [] };
+      inventory.push(userInv);
+    }
+
+    userInv.items.push({
+      name: weapon,
+      rarity,
+      timestamp: new Date().toISOString()
+    });
+
+    saveData('inventory.json', inventory);
+
+    // Kirim hasil ke user
+    ctx.reply(
+      `
+🎰 <b>GACHA RESULT</b>
+──────────────────
+👤 Player: <b>${userName}</b>
+💰 Cost: 200 Rhystal
+💎 Rarity: <b>${rarity}</b>
+⚔️ Weapon: <b>${weapon}</b>
+──────────────────
+📦 Item berhasil disimpan ke inventory!
+💎 Sisa saldo kamu: <b>${member.rhystal.toLocaleString()}</b> Rhystal
+`,
+      { parse_mode: 'HTML' }
+    );
+
+  } catch (err) {
+    console.error('❌ Gagal melakukan gacha:', err);
+    ctx.reply('❌ Terjadi kesalahan saat melakukan gacha.');
+  }
+
+  break;
+}
+  */
+ case '/gacha': {
+  try {
+    const userId = ctx.from.id;
+    const userName = ctx.from.first_name;
+    const gachaCost = 200;
+
+    // 🔹 Cek apakah user punya cukup Rhystal
+    if (!hasBalance(userId, gachaCost)) {
+      ctx.reply('💎 Rhystal kamu tidak cukup untuk melakukan gacha!');
+      break;
+    }
+
+    // 🔹 Load data
+    const weapons = loadData('weapon.json');
+    const members = loadData('members.json');
+    const inventory = loadData('inventory.json');
+
+    // 🔹 Ambil data member
+    const member = members.find(m => m.id.toString() === userId.toString());
+
+    // 🔹 Kurangi Rhystal
+    member.rhystal -= gachaCost;
+    saveData('members.json', members);
+
+    // 🎲 Sistem probabilitas gacha (lebih susah dapat Epic+)
+    const rarityChances = {
+      Uncommon: 65,   // sering keluar
+      Rare: 25,       // lumayan sering
+      Epic: 8,        // mulai langka
+      Legendary: 1.5, // susah banget
+      Mythic: 0.5     // super langka
+    };
+
+    function getRarity() {
+      const rand = Math.random() * 100;
+      let cumulative = 0;
+      for (const [rarity, chance] of Object.entries(rarityChances)) {
+        cumulative += chance;
+        if (rand < cumulative) return rarity;
+      }
+      return 'Uncommon'; // fallback (harusnya gak kepakai)
+    }
+
+    // 🔹 Tentukan hasil gacha
+    const rarity = getRarity();
+    const pool = weapons[rarity];
+    const weapon = pool[Math.floor(Math.random() * pool.length)];
+
+    // 🔹 Simpan ke inventory
+    let userInv = inventory.find(u => u.userId === userId);
+    if (!userInv) {
+      userInv = { userId, items: [] };
+      inventory.push(userInv);
+    }
+
+    userInv.items.push({
+      name: weapon,
+      rarity,
+      timestamp: new Date().toISOString()
+    });
+
+    saveData('inventory.json', inventory);
+
+    // 🔹 Kirim hasil ke user
+    ctx.reply(
+      `
+🎰 <b>GACHA RESULT</b>
+──────────────────
+👤 Player: <b>${userName}</b>
+💰 Cost: 200 Rhystal
+💎 Rarity: <b>${rarity}</b>
+⚔️ Weapon: <b>${weapon}</b>
+──────────────────
+📦 Item berhasil disimpan ke inventory!
+💎 Sisa saldo kamu: <b>${member.rhystal.toLocaleString()}</b> Rhystal
+`,
+      { parse_mode: 'HTML' }
+    );
+
+  } catch (err) {
+    console.error('❌ Gagal melakukan gacha:', err);
+    ctx.reply('❌ Terjadi kesalahan saat melakukan gacha.');
+  }
+
+  break;
+}
+
+
+        case '/menumember': {
+          await msgHandler.menuMember(ctx);
+        break;
+    }
+        case '/makerhystal': {
+                const args = ctx.message.text.split(' ');
+               const rsId = args[1]; // contoh: /makerhystal 2188
+
+              if (!rsId) return ctx.reply('⚠️ Contoh penggunaan: /makerhystal 2188');
+              var amount = parseInt(rsId);
+              const isAdmin = await func.isAdmin(userId);
+              if (!isAdmin) return ctx.reply("❌ Kamu bukan admin.");
+              await addRhystal(userId, parseInt(amount));
+              ctx.reply(`Berhasil membuat 💎${amount.toLocaleString()} Rhystal`)
+          break;
+        }
+        case '/addadmin':
+        case '/promote': {
+             const fromId = ctx.from.id;
+              const args = ctx.message.text.split(" ").slice(1);
+              const targetId = parseInt(args[0]);
+
+              const isAdmin = await func.isAdmin(fromId);
+              if (!isAdmin) return ctx.reply("❌ Kamu bukan admin, ga bisa nambah admin lain.");
+
+              if (!targetId) return ctx.reply("⚠️ Format salah.\nGunakan: /addadmin <id_telegram>");
+
+              const admins = loadData("admins.json");
+              if (admins.some(a => a.id === targetId)) {
+                return ctx.reply("❌ ID ini sudah terdaftar sebagai admin.");
+              }
+
+              // Ambil data user dari Telegram (optional)
+              const targetUser = await ctx.telegram.getChat(targetId).catch(() => null);
+              const username = targetUser?.username ? `@${targetUser.username}` : "Tanpa Username";
+              const name = targetUser?.first_name || "Unknown";
+
+              admins.push({ id: targetId, name, username });
+              saveData("admins.json", admins);
+
+              ctx.reply(`✅ Berhasil menambahkan admin baru:\n<b>${name}</b> (${username})\n🆔 <code>${targetId}</code>`, { parse_mode: "HTML" });
+                    break;
+    }
+        case '/adminlist': {
+           const fromId = ctx.from.id;
+  const isAdmin = await func.isAdmin(fromId);
+  if (!isAdmin) return ctx.reply("❌ Kamu bukan admin.");
+
+  const admins = loadData("admins.json");
+
+  if (admins.length === 0) {
+    return ctx.reply("📭 Belum ada admin terdaftar.");
+  }
+
+  let listText = "<b>📋 Daftar Admin:</b>\n\n";
+  admins.forEach((a, i) => {
+    listText += `${i + 1}. <b>${a.name}</b> (${a.username || "tanpa username"})\n🆔 <code>${a.id}</code>\n\n`;
+  });
+
+  ctx.reply(listText, { parse_mode: "HTML" });
+        break;
+        }
+        case 'deleteadmin': {
+          const fromId = ctx.from.id;
+  const args = ctx.message.text.split(" ").slice(1);
+  const targetId = parseInt(args[0]);
+
+  const isAdmin = await func.isAdmin(fromId);
+  if (!isAdmin) return ctx.reply("❌ Kamu bukan admin.");
+
+  if (!targetId) return ctx.reply("⚠️ Format salah.\nGunakan: /deladmin <id_telegram>");
+
+  let admins = loadData("admins.json");
+  const index = admins.findIndex(a => a.id === targetId);
+
+  if (index === -1) return ctx.reply("❌ ID ini tidak ditemukan di daftar admin.");
+
+  const removed = admins.splice(index, 1)[0];
+  saveData("admins.json", admins);
+
+  ctx.reply(`🗑️ Admin <b>${removed.name}</b> (${removed.username || "tanpa username"}) telah dihapus.`, { parse_mode: "HTML" });
+          break;
+        }
         case '/ping':
         case '/status':
         case '/server': {
@@ -192,12 +501,135 @@ bot.on('text', async (ctx) => {
             coolDownDaily.set(userId, now);
             const success = updateRhystal(userId, 50);
              if (success) {
-              ctx.reply("🎁 Kamu sukses claim daily 50 💎 Rhystal!");
+              ctx.reply("🎁 Kamu sukses claim daily 💎50 Rhystal!");
               } else {
               ctx.reply("❌ Kamu belum terdaftar, ketik /register dulu!");
               }
         break;
           }
+        case '/pay': {
+            const userId = ctx.from.id;
+  const args = ctx.message.text.split(' ');
+  const payId = args[1]; // contoh: /pay 2188
+
+  if (!payId) return ctx.reply('⚠️ Contoh penggunaan: /pay 2188');
+
+  // Ambil data member
+  const member = await getMember(userId);
+  if (!member) return ctx.reply('⚠️ Anda belum terdaftar.');
+
+  // Ambil data transaksi
+  const transactions = JSON.parse(fs.readFileSync('./transaksi.json', 'utf8'));
+  const transaction = transactions.find(t => t.id === payId);
+
+  if (!transaction) return ctx.reply('❌ ID transaksi tidak ditemukan.');
+  if (transaction.status !== 'pending') return ctx.reply('⚠️ Transaksi ini sudah dibayar atau dibatalkan.');
+
+  // Cek saldo
+  if (member.rhystal < transaction.price) {
+    return ctx.reply(`💸 Saldo Anda tidak cukup! Diperlukan ${transaction.price.toLocaleString()} Rhystal.`);
+  }
+
+  // Potong saldo user
+  var amount = parseInt(transaction.price);
+  await useRhystal(userId, parseInt(amount));
+
+  // Ubah status transaksi
+  transaction.status = 'paid';
+  fs.writeFileSync('./transaksi.json', JSON.stringify(transactions, null, 2));
+
+  ctx.reply(`✅ Pembayaran ID *${payId}* berhasil!
+Barang: ${transaction.target}
+Harga: 💎 ${transaction.price.toLocaleString()} Rhystal`);
+            
+        break;
+          }
+        case '/createticket':
+        case '/maketicket': {
+           const userId = ctx.from.id;
+  const args = ctx.message.text.split(' ').slice(1); 
+  const [type, target, price] = args;
+      
+  if (!type || !target || !price) {
+    return ctx.reply(`⚙️ Cara pakai:
+\`/maketicket [type] [target] [price]\`
+
+📘 Contoh:
+\`/maketicket shop Rhystal_Sword 200\``);
+  }
+
+  // Generate ID unik (4 digit random)
+  const id = Math.floor(1000 + Math.random() * 9000).toString();
+
+  // Baca transaksi lama
+  let transactions = [];
+  const path = './transaksi.json';
+  if (fs.existsSync(path)) {
+    transactions = JSON.parse(fs.readFileSync(path, 'utf8'));
+  }
+
+  // Buat transaksi baru
+  const newTransaction = {
+    id,
+    type,
+    userId,
+    target,
+    price: Number(price),
+    status: 'pending',
+    createdAt: new Date().toISOString()
+  };
+
+  // Simpan
+  transactions.push(newTransaction);
+  fs.writeFileSync(path, JSON.stringify(transactions, null, 2));
+
+  ctx.reply(`🎟️ Ticket transaksi berhasil dibuat!
+
+🆔 ID: ${id}
+📦 Tipe: ${type}
+🎯 Target: ${target}
+💰 Harga: ${price} Rhystal
+⏳ Status: Pending
+
+Gunakan perintah:
+\`/pay ${id}\` untuk melanjutkan pembayaran.`);
+      break;
+        }
+        
+        case '/mytickets':
+        case '/myticket':
+        case '/mytransactions':
+        case '/transactions': {
+           const userId = ctx.from.id;
+            const path = './transaksi.json';
+
+            if (!fs.existsSync(path)) {
+              return ctx.reply('📂 Belum ada data transaksi.');
+            }
+
+            const transactions = JSON.parse(fs.readFileSync(path, 'utf8'));
+            const myTx = transactions.filter(t => t.userId === userId);
+            console.log(myTx)
+            if (myTx.length === 0) {
+              return ctx.reply('😕 Kamu belum memiliki transaksi apapun.');
+            }
+
+            // Format daftar transaksi
+            let text = `<b>🎟️ Daftar Ticket Transaksi Kamu</b>\n\n`;
+            myTx.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)); // urut terbaru dulu
+
+            for (const tx of myTx.slice(0, 10)) { // tampilkan max 10 transaksi
+              const statusEmoji = tx.status === 'pending' ? '⏳' :
+                                  tx.status === 'success' ? '✅' :
+                                  '✅';
+              text += `<b>Transactions ID: </b><i>${tx.id}</i>\nTransactions <b>Type:</b> <i>${tx.type}</i>\nTransactions <b>Name:</b> <i>${tx.target}</i>\nTransactions <b>Price:</b> <i>💎 ${tx.price}</i> Rhystal \n<b>Status: </b> <i>${statusEmoji} ${tx.status.toUpperCase()}</i>\nCreated at ${new Date(tx.createdAt).toLocaleString()}\n\n`;
+            }
+
+            text += `Tampilkan ${myTx.length > 10 ? '10 dari ' + myTx.length : myTx.length} transaksi.\nGunakan /pay [id] untuk membayar ticket.`;
+
+            ctx.reply(text, { parse_mode: 'HTML' });
+          break;
+        }
         case '/give':
         case '/tf':   {
           const to = args[0];
@@ -234,6 +666,7 @@ bot.on('text', async (ctx) => {
           ctx.reply(captionSender, { parse_mode: "HTML" });
           break;
         }
+        /*
         case '/quest': {
           const member = getMember(userId);
           if (!member) return ctx.reply('⚠️ Kamu belum terdaftar. Ketik /register dulu.');
@@ -265,6 +698,7 @@ case '/share': {
   ctx.reply(result.msg, { parse_mode: 'HTML' });
   break;
 }
+*/
 case '/referral': {
   const member = getMember(userId);
   if (!member) return ctx.reply('❌ Kamu belum terdaftar, ketik /register dulu!');
@@ -286,18 +720,7 @@ ${stats}
   ctx.reply(msg, { parse_mode: 'HTML' });
   break;
 }
-case '/reffcheck': {
-  const status = getDailyQuestStatus(userId);
-  const referStats = getReferralStats(userId);
 
-  ctx.reply(`
-📋 <b>Status Quest</b>
-
-${status}
-${referStats}
-`, { parse_mode: 'HTML' });
-  break;
-}
 
         case '/rhystal': 
         const member = getMember(ctx.from.id);
